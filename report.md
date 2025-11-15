@@ -203,7 +203,514 @@ This project implements a **Student Management System** using the **MVC (Model-V
 - Follows PRG (Post-Redirect-Get) pattern
 - Better user experience
 
-## Architecture Flow
+## CRUD Operations: Detailed Code Flow
+
+This section explains the step-by-step code flow for each CRUD operation, tracing the execution from user interaction through the MVC layers to the database and back.
+
+---
+
+### 1. READ Operation: List All Students
+
+**User Action**: Navigates to `/student` or clicks "View Students" link
+
+#### Step-by-Step Flow:
+
+**Step 1: HTTP Request**
+```
+GET /student?action=list
+```
+- Browser sends GET request to servlet mapped at `/student`
+- URL parameter `action=list` (or defaults to "list" if omitted)
+
+**Step 2: Servlet Container**
+- Tomcat receives request
+- Routes to `StudentController` servlet (mapped via `@WebServlet("/student")`)
+- Calls `doGet()` method
+
+**Step 3: Controller - doGet() Method** (StudentController.java:26-52)
+```java
+protected void doGet(HttpServletRequest request, HttpServletResponse response) {
+    String action = request.getParameter("action");  // Extracts "list"
+    if (action == null) action = "list";             // Default to "list"
+    
+    switch (action) {
+        case "list":
+            listStudents(request, response);  // Routes here
+            break;
+        // ... other cases
+    }
+}
+```
+
+**Step 4: Controller - listStudents() Method** (StudentController.java:73-81)
+```java
+private void listStudents(...) {
+    // 1. Call DAO to get data
+    List<Student> students = studentDAO.getAllStudents();
+    
+    // 2. Store data in request scope for JSP access
+    request.setAttribute("students", students);
+    
+    // 3. Forward to view (server-side redirect, same request)
+    RequestDispatcher dispatcher = request.getRequestDispatcher("/views/student-list.jsp");
+    dispatcher.forward(request, response);
+}
+```
+
+**Step 5: DAO - getAllStudents() Method** (StudentDAO.java:23-46)
+```java
+public List<Student> getAllStudents() {
+    List<Student> students = new ArrayList<>();
+    String sql = "SELECT * FROM students ORDER BY id DESC";
+    
+    // Try-with-resources: auto-closes Connection, PreparedStatement, ResultSet
+    try (Connection conn = getConnection();           // Opens DB connection
+         PreparedStatement pstmt = conn.prepareStatement(sql);
+         ResultSet rs = pstmt.executeQuery()) {      // Executes SELECT query
+        
+        // Iterate through result set
+        while (rs.next()) {
+            Student student = new Student();          // Create new Student object
+            student.setId(rs.getInt("id"));          // Map database columns
+            student.setStudentCode(rs.getString("student_code"));
+            student.setFullName(rs.getString("full_name"));
+            student.setEmail(rs.getString("email"));
+            student.setMajor(rs.getString("major"));
+            student.setCreatedAt(rs.getTimestamp("created_at"));
+            students.add(student);                    // Add to list
+        }
+    } catch (SQLException | ClassNotFoundException e) {
+        e.printStackTrace();
+    }
+    
+    return students;  // Returns List<Student>
+}
+```
+
+**Step 6: Database Query Execution**
+- MySQL executes: `SELECT * FROM students ORDER BY id DESC`
+- Returns ResultSet with all student records
+- Connection automatically closed by try-with-resources
+
+**Step 7: View - student-list.jsp Rendering**
+```jsp
+<!-- JSTL iterates through students list -->
+<c:forEach var="student" items="${students}">
+    <tr>
+        <td>${student.id}</td>                    <!-- EL accesses getter methods -->
+        <td>${student.studentCode}</td>
+        <td>${student.fullName}</td>
+        <td>${student.email}</td>
+        <td>${student.major}</td>
+        <td>
+            <a href="student?action=edit&id=${student.id}">Edit</a>
+            <a href="student?action=delete&id=${student.id}">Delete</a>
+        </td>
+    </tr>
+</c:forEach>
+```
+
+**Step 8: HTTP Response**
+- JSP generates HTML
+- Response sent to browser
+- User sees table of all students
+
+**Key Points:**
+- Uses `forward()` (server-side, same request)
+- Data passed via `request.setAttribute()`
+- DAO returns List, Controller passes to View
+- View uses JSTL `<c:forEach>` and EL `${}`
+
+---
+
+### 2. CREATE Operation: Add New Student
+
+**User Action**: Clicks "Add New Student" button, fills form, submits
+
+#### Phase 1: Display Form (GET Request)
+
+**Step 1: HTTP Request**
+```
+GET /student?action=new
+```
+
+**Step 2: Controller - doGet()** (StudentController.java:26-52)
+```java
+switch (action) {
+    case "new":
+        showNewForm(request, response);  // Routes here
+        break;
+}
+```
+
+**Step 3: Controller - showNewForm()** (StudentController.java:83-88)
+```java
+private void showNewForm(...) {
+    // No data needed, just forward to form
+    RequestDispatcher dispatcher = request.getRequestDispatcher("/views/student-form.jsp");
+    dispatcher.forward(request, response);
+}
+```
+
+**Step 4: View - student-form.jsp (Add Mode)**
+```jsp
+<!-- Form renders with empty fields -->
+<form action="student" method="POST">
+    <input type="hidden" name="action" value="insert">  <!-- Action for POST -->
+    
+    <input type="text" name="studentCode" required>
+    <input type="text" name="fullName" required>
+    <input type="email" name="email">
+    <input type="text" name="major" required>
+    
+    <button type="submit">Add Student</button>
+</form>
+```
+
+#### Phase 2: Process Form Submission (POST Request)
+
+**Step 5: HTTP Request (Form Submit)**
+```
+POST /student
+Content-Type: application/x-www-form-urlencoded
+
+action=insert&studentCode=SV001&fullName=John Doe&email=john@example.com&major=CS
+```
+
+**Step 6: Controller - doPost()** (StudentController.java:54-71)
+```java
+protected void doPost(...) {
+    String action = request.getParameter("action");  // Extracts "insert"
+    
+    switch (action) {
+        case "insert":
+            insertStudent(request, response);  // Routes here
+            break;
+    }
+}
+```
+
+**Step 7: Controller - insertStudent()** (StudentController.java:101-116)
+```java
+private void insertStudent(...) {
+    // 1. Extract form parameters from request
+    String studentCode = request.getParameter("studentCode");
+    String fullName = request.getParameter("fullName");
+    String email = request.getParameter("email");
+    String major = request.getParameter("major");
+    
+    // 2. Create Student object (using parameterized constructor)
+    Student student = new Student(studentCode, fullName, email, major);
+    
+    // 3. Call DAO to persist to database
+    if (studentDAO.addStudent(student)) {
+        // Success: Redirect with message (PRG pattern)
+        response.sendRedirect("student?action=list&message=Student added successfully");
+    } else {
+        // Failure: Redirect with error
+        response.sendRedirect("student?action=list&error=Failed to add student");
+    }
+}
+```
+
+**Step 8: DAO - addStudent()** (StudentDAO.java:76-93)
+```java
+public boolean addStudent(Student student) {
+    String sql = "INSERT INTO students (student_code, full_name, email, major) VALUES (?, ?, ?, ?)";
+    
+    try (Connection conn = getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        
+        // Set parameters (prevents SQL injection)
+        pstmt.setString(1, student.getStudentCode());
+        pstmt.setString(2, student.getFullName());
+        pstmt.setString(3, student.getEmail());
+        pstmt.setString(4, student.getMajor());
+        
+        // Execute INSERT
+        int rowsAffected = pstmt.executeUpdate();  // Returns number of rows inserted
+        
+        return rowsAffected > 0;  // true if insert successful
+    } catch (SQLException | ClassNotFoundException e) {
+        e.printStackTrace();
+        return false;
+    }
+}
+```
+
+**Step 9: Database INSERT**
+- MySQL executes: `INSERT INTO students (student_code, full_name, email, major) VALUES ('SV001', 'John Doe', 'john@example.com', 'CS')`
+- Returns number of affected rows (should be 1)
+- Auto-increment assigns `id` and `created_at` timestamp
+
+**Step 10: Redirect Response**
+- `sendRedirect()` sends HTTP 302 redirect
+- Browser makes new GET request to: `/student?action=list&message=Student added successfully`
+- This triggers the READ operation (listStudents) again
+- User sees updated list with success message
+
+**Key Points:**
+- Two-phase: GET to show form, POST to process
+- Uses `sendRedirect()` after POST (PRG pattern)
+- Prevents duplicate submissions on refresh
+- Message passed via URL parameter
+
+---
+
+### 3. UPDATE Operation: Edit Existing Student
+
+**User Action**: Clicks "Edit" button on a student row, modifies form, submits
+
+#### Phase 1: Display Form with Data (GET Request)
+
+**Step 1: HTTP Request**
+```
+GET /student?action=edit&id=1
+```
+
+**Step 2: Controller - doGet()** (StudentController.java:26-52)
+```java
+switch (action) {
+    case "edit":
+        showEditForm(request, response);  // Routes here
+        break;
+}
+```
+
+**Step 3: Controller - showEditForm()** (StudentController.java:90-99)
+```java
+private void showEditForm(...) {
+    // 1. Extract student ID from request
+    int id = Integer.parseInt(request.getParameter("id"));
+    
+    // 2. Fetch student data from database
+    Student student = studentDAO.getStudentById(id);
+    
+    // 3. Store student in request scope for JSP
+    request.setAttribute("student", student);
+    
+    // 4. Forward to form (same form as add, but with data)
+    RequestDispatcher dispatcher = request.getRequestDispatcher("/views/student-form.jsp");
+    dispatcher.forward(request, response);
+}
+```
+
+**Step 4: DAO - getStudentById()** (StudentDAO.java:49-73)
+```java
+public Student getStudentById(int id) {
+    Student student = null;
+    String sql = "SELECT * FROM students WHERE id = ?";
+    
+    try (Connection conn = getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        
+        pstmt.setInt(1, id);  // Set ID parameter
+        
+        try (ResultSet rs = pstmt.executeQuery()) {
+            if (rs.next()) {  // If record found
+                student = new Student();
+                student.setId(rs.getInt("id"));
+                student.setStudentCode(rs.getString("student_code"));
+                student.setFullName(rs.getString("full_name"));
+                student.setEmail(rs.getString("email"));
+                student.setMajor(rs.getString("major"));
+                student.setCreatedAt(rs.getTimestamp("created_at"));
+            }
+        }
+    } catch (SQLException | ClassNotFoundException e) {
+        e.printStackTrace();
+    }
+    
+    return student;  // Returns Student object or null
+}
+```
+
+**Step 5: View - student-form.jsp (Edit Mode)**
+```jsp
+<!-- Form renders with pre-filled values -->
+<form action="student" method="POST">
+    <input type="hidden" name="action" value="update">  <!-- Different action -->
+    <input type="hidden" name="id" value="${student.id}">  <!-- Include ID -->
+    
+    <!-- Student code is readonly in edit mode -->
+    <input type="text" name="studentCode" 
+           value="${student.studentCode}" readonly>
+    
+    <!-- Other fields pre-filled with existing values -->
+    <input type="text" name="fullName" 
+           value="${student.fullName}" required>
+    <input type="email" name="email" 
+           value="${student.email}">
+    <input type="text" name="major" 
+           value="${student.major}" required>
+    
+    <button type="submit">Update Student</button>
+</form>
+```
+
+#### Phase 2: Process Update (POST Request)
+
+**Step 6: HTTP Request (Form Submit)**
+```
+POST /student
+Content-Type: application/x-www-form-urlencoded
+
+action=update&id=1&studentCode=SV001&fullName=John Smith&email=john.smith@example.com&major=IT
+```
+
+**Step 7: Controller - doPost()** (StudentController.java:54-71)
+```java
+switch (action) {
+    case "update":
+        updateStudent(request, response);  // Routes here
+        break;
+}
+```
+
+**Step 8: Controller - updateStudent()** (StudentController.java:118-140)
+```java
+private void updateStudent(...) {
+    // 1. Extract parameters
+    int id = Integer.parseInt(request.getParameter("id"));
+    String fullName = request.getParameter("fullName");
+    String email = request.getParameter("email");
+    String major = request.getParameter("major");
+    
+    // 2. Fetch existing student from database
+    Student student = studentDAO.getStudentById(id);
+    
+    if (student != null) {
+        // 3. Update only mutable fields (not studentCode)
+        student.setFullName(fullName);
+        student.setEmail(email);
+        student.setMajor(major);
+        
+        // 4. Persist changes
+        if (studentDAO.updateStudent(student)) {
+            response.sendRedirect("student?action=list&message=Student updated successfully");
+        } else {
+            response.sendRedirect("student?action=list&error=Failed to update student");
+        }
+    } else {
+        response.sendRedirect("student?action=list&error=Student not found");
+    }
+}
+```
+
+**Step 9: DAO - updateStudent()** (StudentDAO.java:96-113)
+```java
+public boolean updateStudent(Student student) {
+    String sql = "UPDATE students SET full_name = ?, email = ?, major = ? WHERE id = ?";
+    
+    try (Connection conn = getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        
+        // Set parameters (note: studentCode NOT updated)
+        pstmt.setString(1, student.getFullName());
+        pstmt.setString(2, student.getEmail());
+        pstmt.setString(3, student.getMajor());
+        pstmt.setInt(4, student.getId());  // WHERE clause
+        
+        int rowsAffected = pstmt.executeUpdate();  // Returns number of rows updated
+        
+        return rowsAffected > 0;
+    } catch (SQLException | ClassNotFoundException e) {
+        e.printStackTrace();
+        return false;
+    }
+}
+```
+
+**Step 10: Database UPDATE**
+- MySQL executes: `UPDATE students SET full_name = 'John Smith', email = 'john.smith@example.com', major = 'IT' WHERE id = 1`
+- Returns number of affected rows (should be 1)
+
+**Step 11: Redirect Response**
+- Redirects to list with success message
+- User sees updated student in the list
+
+**Key Points:**
+- Fetches existing data before showing form
+- Student code is readonly (not updated)
+- Only updates mutable fields
+- Uses same form JSP as add operation
+
+---
+
+### 4. DELETE Operation: Remove Student
+
+**User Action**: Clicks "Delete" button, confirms deletion
+
+#### Step-by-Step Flow:
+
+**Step 1: HTTP Request**
+```
+GET /student?action=delete&id=1
+```
+- Link includes confirmation dialog: `onclick="return confirm('Are you sure?')"`
+
+**Step 2: Controller - doGet()** (StudentController.java:26-52)
+```java
+switch (action) {
+    case "delete":
+        deleteStudent(request, response);  // Routes here
+        break;
+}
+```
+
+**Step 3: Controller - deleteStudent()** (StudentController.java:142-152)
+```java
+private void deleteStudent(...) {
+    // 1. Extract student ID
+    int id = Integer.parseInt(request.getParameter("id"));
+    
+    // 2. Call DAO to delete
+    if (studentDAO.deleteStudent(id)) {
+        response.sendRedirect("student?action=list&message=Student deleted successfully");
+    } else {
+        response.sendRedirect("student?action=list&error=Failed to delete student");
+    }
+}
+```
+
+**Step 4: DAO - deleteStudent()** (StudentDAO.java:116-129)
+```java
+public boolean deleteStudent(int id) {
+    String sql = "DELETE FROM students WHERE id = ?";
+    
+    try (Connection conn = getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        
+        pstmt.setInt(1, id);  // Set ID parameter
+        
+        int rowsAffected = pstmt.executeUpdate();  // Returns number of rows deleted
+        
+        return rowsAffected > 0;  // true if delete successful
+    } catch (SQLException | ClassNotFoundException e) {
+        e.printStackTrace();
+        return false;
+    }
+}
+```
+
+**Step 5: Database DELETE**
+- MySQL executes: `DELETE FROM students WHERE id = 1`
+- Returns number of affected rows (should be 1)
+- Record permanently removed from database
+
+**Step 6: Redirect Response**
+- Redirects to list with success message
+- User sees updated list without deleted student
+
+**Key Points:**
+- Simple operation: just ID needed
+- No form required
+- Confirmation dialog prevents accidental deletion
+- Permanent operation (no undo)
+
+---
+
+## Architecture Flow Summary
 
 ### Request Flow Example: Adding a Student
 
