@@ -4,6 +4,8 @@ import model.Student;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public class StudentDAO {
@@ -19,30 +21,22 @@ public class StudentDAO {
         return DriverManager.getConnection(JDBC_URL, JDBC_USER, JDBC_PASSWORD);
     }
 
+    // Map a ResultSet row to Student object
+    private Student mapStudent(ResultSet rs) throws SQLException {
+        Student student = new Student();
+        student.setId(rs.getInt("id"));
+        student.setStudentCode(rs.getString("student_code"));
+        student.setFullName(rs.getString("full_name"));
+        student.setEmail(rs.getString("email"));
+        student.setMajor(rs.getString("major"));
+        student.setCreatedAt(rs.getTimestamp("created_at"));
+        return student;
+    }
+
     // Get all students
     public List<Student> getAllStudents() {
-        List<Student> students = new ArrayList<>();
         String sql = "SELECT * FROM students ORDER BY id DESC";
-
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql);
-             ResultSet rs = pstmt.executeQuery()) {
-
-            while (rs.next()) {
-                Student student = new Student();
-                student.setId(rs.getInt("id"));
-                student.setStudentCode(rs.getString("student_code"));
-                student.setFullName(rs.getString("full_name"));
-                student.setEmail(rs.getString("email"));
-                student.setMajor(rs.getString("major"));
-                student.setCreatedAt(rs.getTimestamp("created_at"));
-                students.add(student);
-            }
-        } catch (SQLException | ClassNotFoundException e) {
-            e.printStackTrace();
-        }
-
-        return students;
+        return executeStudentQuery(sql, Collections.emptyList());
     }
 
     // Get student by ID
@@ -56,13 +50,7 @@ public class StudentDAO {
             pstmt.setInt(1, id);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
-                    student = new Student();
-                    student.setId(rs.getInt("id"));
-                    student.setStudentCode(rs.getString("student_code"));
-                    student.setFullName(rs.getString("full_name"));
-                    student.setEmail(rs.getString("email"));
-                    student.setMajor(rs.getString("major"));
-                    student.setCreatedAt(rs.getTimestamp("created_at"));
+                    student = mapStudent(rs);
                 }
             }
         } catch (SQLException | ClassNotFoundException e) {
@@ -126,6 +114,109 @@ public class StudentDAO {
             e.printStackTrace();
             return false;
         }
+    }
+
+    // Search students by keyword (code, name, email)
+    public List<Student> searchStudents(String keyword) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return getAllStudents();
+        }
+
+        String sql = "SELECT * FROM students " +
+                "WHERE student_code LIKE ? OR full_name LIKE ? OR email LIKE ? " +
+                "ORDER BY id DESC";
+        String pattern = "%" + keyword.trim() + "%";
+
+        return executeStudentQuery(sql, Arrays.asList(pattern, pattern, pattern));
+    }
+
+    // Get students by major
+    public List<Student> getStudentsByMajor(String major) {
+        if (major == null || major.trim().isEmpty()) {
+            return getAllStudents();
+        }
+
+        String sql = "SELECT * FROM students WHERE major = ? ORDER BY id DESC";
+        return executeStudentQuery(sql, Collections.singletonList(major.trim()));
+    }
+
+    // Get students sorted by column/order
+    public List<Student> getStudentsSorted(String sortBy, String order) {
+        String validatedColumn = validateSortBy(sortBy);
+        String validatedOrder = validateOrder(order);
+
+        String sql = "SELECT * FROM students ORDER BY " + validatedColumn + " " + validatedOrder;
+        return executeStudentQuery(sql, Collections.emptyList());
+    }
+
+    // Combined filter method (search + filter + sort)
+    public List<Student> getStudentsFiltered(String keyword, String major, String sortBy, String order) {
+        StringBuilder sql = new StringBuilder("SELECT * FROM students WHERE 1=1");
+        List<Object> params = new ArrayList<>();
+
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            sql.append(" AND (student_code LIKE ? OR full_name LIKE ? OR email LIKE ?)");
+            String pattern = "%" + keyword.trim() + "%";
+            params.add(pattern);
+            params.add(pattern);
+            params.add(pattern);
+        }
+
+        if (major != null && !major.trim().isEmpty()) {
+            sql.append(" AND major = ?");
+            params.add(major.trim());
+        }
+
+        sql.append(" ORDER BY ")
+                .append(validateSortBy(sortBy))
+                .append(" ")
+                .append(validateOrder(order));
+
+        return executeStudentQuery(sql.toString(), params);
+    }
+
+    // Helper to execute SELECT queries and map to Student list
+    private List<Student> executeStudentQuery(String sql, List<Object> params) {
+        List<Student> students = new ArrayList<>();
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            for (int i = 0; i < params.size(); i++) {
+                pstmt.setObject(i + 1, params.get(i));
+            }
+
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    students.add(mapStudent(rs));
+                }
+            }
+        } catch (SQLException | ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+
+        return students;
+    }
+
+    private String validateSortBy(String sortBy) {
+        String defaultColumn = "id";
+        if (sortBy == null) {
+            return defaultColumn;
+        }
+
+        List<String> allowedColumns = Arrays.asList(
+                "id", "student_code", "full_name", "email", "major", "created_at"
+        );
+
+        String normalized = sortBy.toLowerCase();
+        return allowedColumns.contains(normalized) ? normalized : defaultColumn;
+    }
+
+    private String validateOrder(String order) {
+        if ("desc".equalsIgnoreCase(order)) {
+            return "DESC";
+        }
+        return "ASC";
     }
 
     // Test method (remove after testing)
