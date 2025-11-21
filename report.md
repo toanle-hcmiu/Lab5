@@ -740,14 +740,35 @@ public boolean deleteStudent(int id) {
 
 5. **Web Application Architecture**: Request/response cycle, forwarding vs redirecting, request attributes
 
+## Homework Enhancements (Part B)
+
+### Exercise 5: Search Capability
+- Added `searchStudents(String keyword)` in `StudentDAO` to query student code, name, and email columns with wildcard `LIKE` matches and prepared statements.
+- Introduced `searchStudents()` handler in `StudentController` that trims keywords, falls back to the default list when empty, and forwards results together with the current keyword so the JSP can show context.
+- Extended `student-list.jsp` with a GET search form, persistent keyword input, contextual “Search results for …” text, and a Clear button to return to the full list.
+
+### Exercise 6: Server-Side Validation
+- Added `validateStudent(Student student, HttpServletRequest request)` to the controller for reusable validation logic (code pattern, name length, optional email format, required major).
+- Integrated validation into both `insertStudent()` and `updateStudent()` so invalid submissions forward back to the form with the user-entered data and specific error attributes.
+- Updated `student-form.jsp` to display per-field error messages in red just beneath the corresponding inputs for clear guidance.
+
+### Exercise 7: Sorting & Filtering
+- Implemented reusable DAO helpers: `getStudentsSorted`, `getStudentsByMajor`, and `getStudentsFiltered` (search + filter + sort) with whitelist validation for column/order inputs.
+- Added controller routes/actions for `sort` and `filter`, along with sanitizers to prevent invalid parameters and ensure consistent state passed to the view.
+- Upgraded `student-list.jsp` with UI controls:
+  - Sortable table headers showing ascending/descending indicators and toggling order links.
+  - A filter dropdown for common majors that preserves the selected option and offers a “Clear Filter” action.
+  - Shared state indicators so users always know which filters or sorts are active.
+
+### Exercise 8 (Optional): Pagination
+- Not implemented; current focus remained on fully delivering Exercises 5-7 per requirements.
+
 ## Conclusion
 
-This project successfully implements a complete MVC-based web application following Java EE best practices. The separation of concerns makes the codebase maintainable, testable, and scalable. The use of JSTL eliminates scriptlets, making the views cleaner and more secure. All CRUD operations are fully functional with proper error handling and user feedback.
-
-The implementation demonstrates understanding of:
+This project now delivers both the in-class MVC foundation and the Part B homework enhancements. Core CRUD flows remain robust, while search, validation, and sorting/filtering significantly improve usability and data integrity. The separation of concerns keeps the codebase maintainable, JSTL-based views stay free of scriptlets, and validation plus sanitization guard against malformed input. Together these updates demonstrate solid command of:
 - MVC architectural pattern
 - Servlet programming
 - JSP with JSTL and EL
 - JDBC database operations
-- Web application security practices
+- Web application security practices (validation, prepared statements, sanitized parameters)
 
